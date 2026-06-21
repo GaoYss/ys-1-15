@@ -36,12 +36,21 @@ def inventory_summary():
 @inventory_bp.post("")
 def create_ingredient():
     data = request.get_json() or {}
+
+    warning_threshold = float(data.get("warningThreshold", 0))
+    if warning_threshold < 0:
+        return {"error": "预警线不能为负数"}, 400
+
+    stock = float(data.get("stock", 0))
+    if stock < 0:
+        return {"error": "库存不能为负数"}, 400
+
     ingredient = Ingredient(
         name=data["name"],
         category=data["category"],
         unit=data["unit"],
-        stock=float(data.get("stock", 0)),
-        warning_threshold=float(data.get("warningThreshold", 0)),
+        stock=stock,
+        warning_threshold=warning_threshold,
         supplier_id=data.get("supplierId"),
     )
     db.session.add(ingredient)
@@ -54,17 +63,59 @@ def update_ingredient(ingredient_id):
     ingredient = Ingredient.query.get_or_404(ingredient_id)
     data = request.get_json() or {}
 
+    warning_threshold = float(data.get("warningThreshold", ingredient.warning_threshold))
+    if warning_threshold < 0:
+        return {"error": "预警线不能为负数"}, 400
+
+    stock = float(data.get("stock", ingredient.stock))
+    if stock < 0:
+        return {"error": "库存不能为负数"}, 400
+
     ingredient.name = data.get("name", ingredient.name)
     ingredient.category = data.get("category", ingredient.category)
     ingredient.unit = data.get("unit", ingredient.unit)
-    ingredient.stock = float(data.get("stock", ingredient.stock))
-    ingredient.warning_threshold = float(
-        data.get("warningThreshold", ingredient.warning_threshold)
-    )
+    ingredient.stock = stock
+    ingredient.warning_threshold = warning_threshold
     ingredient.supplier_id = data.get("supplierId", ingredient.supplier_id)
 
     db.session.commit()
     return ingredient.to_dict()
+
+
+@inventory_bp.put("/batch-warning")
+def batch_update_warning():
+    data = request.get_json() or {}
+    ids = data.get("ids", [])
+    warning_threshold = float(data.get("warningThreshold", 0))
+
+    if not ids:
+        return {"error": "请选择要调整的原料"}, 400
+
+    if warning_threshold < 0:
+        return {"error": "预警线不能为负数"}, 400
+
+    ingredients = Ingredient.query.filter(Ingredient.id.in_(ids)).all()
+
+    before_warning_count = sum(1 for item in ingredients if item.warning)
+
+    for item in ingredients:
+        item.warning_threshold = warning_threshold
+
+    db.session.commit()
+
+    after_warning_count = sum(1 for item in ingredients if item.warning)
+    upgraded = before_warning_count - after_warning_count
+    downgraded = after_warning_count - before_warning_count
+    upgraded = max(0, upgraded)
+    downgraded = max(0, downgraded)
+
+    ingredients_after = Ingredient.query.filter(Ingredient.id.in_(ids)).all()
+    return {
+        "updated": len(ingredients_after),
+        "upgraded": upgraded,
+        "downgraded": downgraded,
+        "items": [item.to_dict() for item in ingredients_after],
+    }
 
 
 @inventory_bp.get("/options")

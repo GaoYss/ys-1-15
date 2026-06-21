@@ -15,5 +15,8 @@ export const inventoryApi = {
   },
   update(id, payload) {
     return http.put(`/inventory/${id}`, payload)
+  },
+  batchUpdateWarning(payload) {
+    return http.put('/inventory/batch-warning', payload)
   }
 }

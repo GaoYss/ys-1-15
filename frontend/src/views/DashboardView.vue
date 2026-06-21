@@ -47,7 +47,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { inventoryApi } from '../api/inventory'
 import { ordersApi } from '../api/orders'
@@ -56,6 +56,7 @@ import DataTable from '../components/DataTable.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { statusText } from '../utils/format'
+import { eventBus, EVENTS } from '../utils/eventBus'
 
 const summary = ref({ ingredientCount: 0, warningCount: 0, totalStock: 0 })
 const inventory = ref([])
@@ -75,16 +76,31 @@ const orderColumns = [
   { key: 'totalAmount', label: '金额' }
 ]
 
-onMounted(async () => {
-  const [summaryRes, inventoryRes, ordersRes, suppliersRes] = await Promise.all([
+async function loadInventoryData() {
+  const [summaryRes, inventoryRes] = await Promise.all([
     inventoryApi.summary(),
-    inventoryApi.list(),
-    ordersApi.list(),
-    suppliersApi.list()
+    inventoryApi.list()
   ])
   summary.value = summaryRes.data
   inventory.value = inventoryRes.data
+}
+
+let unsubscribe = null
+
+onMounted(async () => {
+  const [ordersRes, suppliersRes] = await Promise.all([ordersApi.list(), suppliersApi.list()])
   orders.value = ordersRes.data
   suppliers.value = suppliersRes.data
+  await loadInventoryData()
+
+  unsubscribe = eventBus.on(EVENTS.INVENTORY_UPDATED, async () => {
+    await loadInventoryData()
+  })
+})
+
+onBeforeUnmount(() => {
+  if (unsubscribe) {
+    unsubscribe()
+  }
 })
 </script>
